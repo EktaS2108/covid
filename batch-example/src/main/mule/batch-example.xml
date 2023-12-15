@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="9a6bcc01-a9a8-4cc1-beae-e9fb5308060c" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Tiger@1234" database="uhub">
+		</db:my-sql-connection>
+	</db:config> 
+	<flow name="batch-demoFlow" doc:id="21b62d3e-0192-4428-8a1c-98307d307a84" >
+		<file:listener doc:id="c94953d6-10e2-43a5-a9a5-62dfbfd88fdc" directory="/Users/ravikanthsomireddy/Desktop/MuleSoft/cvd-cases-dg/new" doc:name="On New or Updated File" autoDelete="true" moveToDirectory="/Users/ravikanthsomireddy/Desktop/MuleSoft/cvd-cases-dg/backup">
+			<scheduling-strategy >
+				<fixed-frequency />
+			</scheduling-strategy>
+		</file:listener>
+		<batch:job jobName="Batch-Demo-Batch_Job" doc:id="22a47f53-37f5-4ebe-b0b3-bbce5b5e3ec1" blockSize="3" maxFailedRecords="-1">
+			<batch:process-records >
+				<batch:step name="Batch_Step_To_Cvd_Case_Master" doc:id="60dac3ed-a286-4a80-92d1-8144b5024231" acceptPolicy="ALL">
+					<ee:transform doc:name="Transform Message" doc:id="00bd4683-8edc-4562-b4a2-0d8ece5c280d">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var currentDate = now() as String { format: "yyyy-MM-dd" }
+---
+{
+	source: payload[0].source,
+	case_type: payload[0].'case-type',
+	first_name: payload[0].'first-name',
+	last_name: payload[0].'last-name',
+	phone: payload[0].phone,
+	email: payload[0].email,
+	date_of_birth: payload[0].dob as String {
+		format: "yyyy-MM-dd"
+	},
+	national_id: payload[0].'national-id',
+	national_id_type: payload[0].'national-id-type',
+	street_address: payload[0].'street-address',
+	city: payload[0].city,
+	state: upper(payload[0].state),
+	postal: payload[0].postal,
+	country: payload[0].country,
+	create_date: currentDate,
+	update_date: currentDate,
+	create_by: "UHIS",
+	update_by: "UHIS"
+}
+]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="16b062df-79dd-4618-a8d2-85e227d6cca1" size="2">
+						<db:bulk-insert doc:id="e8f27bb3-1c1b-4069-96e4-0f599d60e64b" config-ref="Database_Config" doc:name="Bulk insert">
+							<db:sql><![CDATA[insert into uhub.cvd_case_master(source, case_type, first_name, last_name, phone, email, date_of_birth, national_id, national_id_type, street_address, city, state, postal, country, create_date, update_date, create_by, update_by) values(:source, :case_type, :first_name, :last_name, :phone, :email, :date_of_birth, :national_id, :national_id_type, :street_address, :city, :state, :postal, :country, :create_date, update_date, :create_by, :update_by)]]></db:sql>
+						</db:bulk-insert>
+					</batch:aggregator>
+					<set-variable value="i am step 1" doc:name="Set Variable" doc:id="8125bf53-213b-45e2-a52a-82d6735faeb4" variableName="step1Var"/>
+				</batch:step>
+				<batch:step name="Batch_Step" doc:id="be9d368d-2b4a-4ad2-afd4-2f59b57ebab5" acceptPolicy="ALL">
+					<logger level="INFO" doc:name="Logger" doc:id="b1a5d2bd-5e98-47ca-bfd6-91b5a7bd2303" message="printing varaible of step 1 in step 2: #[vars.step1Var]" />
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="c7c044d9-4098-4084-b252-99c7138dbe51" streaming="true">
+						<file:write doc:name="Write" doc:id="73147ed2-b025-4472-8de8-74cd89a2adda" path='#["/Users/ravikanthsomireddy/Desktop/MuleSoft/cvd-cases-dg/failed/cvd-cases-failed-" ++ now() as DateTime as String++".csv"]'>
+							<file:content><![CDATA[#[%dw 2.0
+output application/csv
+---
+payload]]]></file:content>
+						</file:write>
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="Logger" doc:id="cddb42c3-730a-4c5e-92d1-0b758f360de5" message="printing varaible of step 1 on complete: #[vars.step1Var]"/>
+			</batch:on-complete>
+		</batch:job>
+		<logger level="INFO" doc:name="Logger" doc:id="20845d20-c574-4d75-acbc-daeeeb31f528" message="printing payload out of batch job : #[payload]"/>
+		<logger level="INFO" doc:name="Logger" doc:id="12ba1f5c-7655-4f7a-82c6-6b900e74e370" message="printing varaible of step 1 out of batch: #[vars.step1Var]"/>
+	</flow>
+	<flow name="batch-exampleFlow" doc:id="86cfb659-39cd-4ec4-b942-4c6e3125c515" >
+		<logger level="INFO" doc:name="Logger" doc:id="2b9862f8-d227-464e-9cfa-eaadd445aecd" message="step 1 aggregator ************** #[payload]" />
+	</flow>
+</mule>
